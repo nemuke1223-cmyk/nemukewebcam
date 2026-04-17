@@ -2,123 +2,108 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ベビーモニター（接続改善版）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ベビーモニター【最終安定版】</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; color: #333; }
-    .card { background: #fff; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; margin-left: auto; margin-right: auto; }
-    button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; }
+    body { font-family: sans-serif; text-align: center; padding: 15px; background: #f0f2f5; color: #333; margin: 0; }
+    .card { background: #fff; padding: 20px; border-radius: 15px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 450px; margin-left: auto; margin-right: auto; }
+    button { padding: 15px 25px; font-size: 16px; margin: 5px; cursor: pointer; border-radius: 10px; border: none; background: #007bff; color: white; font-weight: bold; }
     .btn-green { background: #28a745; }
-    .btn-orange { background: #fd7e14; }
-    input { padding: 15px; font-size: 18px; width: 80%; max-width: 250px; margin-bottom: 10px; border: 2px solid #ddd; border-radius: 8px; text-align: center; }
-    #videoElement { width: 100%; max-width: 600px; background: black; border-radius: 8px; margin-top: 10px; }
-    .id-display-area { background: #e3f2fd; padding: 15px; border-radius: 8px; font-weight: bold; color: #0d47a1; font-size: 32px; margin: 10px 0; border: 2px solid #bbdefb; }
+    .btn-orange { background: #fd7e14; padding: 10px 20px; font-size: 14px; }
+    input { padding: 15px; font-size: 20px; width: 150px; border: 2px solid #ddd; border-radius: 10px; text-align: center; margin-bottom: 10px; }
+    #videoElement { width: 100%; max-width: 600px; background: #000; border-radius: 12px; margin-top: 10px; aspect-ratio: 4/3; }
+    .id-box { background: #e3f2fd; padding: 15px; border-radius: 10px; font-weight: bold; color: #0d47a1; font-size: 32px; margin: 10px 0; border: 2px solid #bbdefb; }
+    .log-area { background: #333; color: #0f0; font-family: monospace; font-size: 11px; padding: 10px; border-radius: 5px; text-align: left; height: 80px; overflow-y: auto; margin: 10px 0; }
     .hidden { display: none; }
-    #statusText { margin: 10px 0; font-weight: bold; color: #666; }
   </style>
 </head>
 <body>
 
   <div id="setupArea">
-    <h2>自家製ベビーモニター</h2>
+    <h2 style="color:#007bff;">👶 自家製モニター</h2>
     
     <div class="card">
-      <h3>① 赤ちゃん側に置く（カメラ）</h3>
-      <button onclick="startCamera()">カメラを起動する</button>
+      <h3>【送信】カメラ側にする</h3>
+      <button onclick="startCamera()" class="btn-green">カメラを開始してID発行</button>
     </div>
 
     <div class="card">
-      <h3>② 手元で見る（モニター）</h3>
-      <p>カメラ側に表示された5桁の数字を入力</p>
+      <h3>【受信】モニター側にする</h3>
       <input type="number" id="targetIdInput" placeholder="00000" inputmode="numeric">
       <br>
-      <button onclick="startMonitor()" class="btn-green">接続する</button>
+      <button onclick="startMonitor()">このスマホで見る</button>
     </div>
   </div>
 
   <div id="videoArea" class="hidden">
     <div id="cameraSideInfo">
-      <p style="margin:0; font-size:14px;">モニター側に入力するID：</p>
-      <div id="myIdDisplay" class="id-display-area">取得中...</div>
-      <button onclick="switchCamera()" class="btn-orange" style="padding: 10px 20px; font-size: 14px;">カメラ前後切替</button>
+      <p style="margin:0; font-size:13px; color:#666;">モニター側に入力する5桁：</p>
+      <div id="myIdDisplay" class="id-box">取得中...</div>
+      <button onclick="switchCamera()" class="btn-orange">カメラ前後切り替え</button>
     </div>
     
-    <div id="statusText">通信準備中...</div>
-    <button id="unmuteBtn" class="hidden" onclick="unmuteVideo()" style="background:#dc3545; margin-bottom:10px;">音声をオンにする</button>
+    <div class="log-area" id="debugLog">システム起動準備完了...</div>
+    
+    <button id="unmuteBtn" class="hidden" onclick="unmuteVideo()" style="background:#dc3545; width:100%;">タップして音声を出す</button>
     
     <video id="videoElement" autoplay playsinline muted></video>
+    
     <br>
-    <button onclick="location.reload()" style="background:#6c757d; margin-top:20px; padding: 10px;">終了して戻る</button>
+    <button onclick="location.reload()" style="background:#6c757d; margin-top:20px;">終了して戻る</button>
   </div>
 
   <script>
     let peer;
     let localStream;
     let currentFacingMode = "environment";
+    const logEl = document.getElementById('debugLog');
     const videoEl = document.getElementById('videoElement');
-    const setupArea = document.getElementById('setupArea');
-    const videoArea = document.getElementById('videoArea');
-    const statusText = document.getElementById('statusText');
-    const myIdDisplay = document.getElementById('myIdDisplay');
-    const unmuteBtn = document.getElementById('unmuteBtn');
 
-    // 接続の安定性を高めるための公開STUNサーバ設定
-    const peerConfig = {
-      config: {
-        'iceServers': [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      }
-    };
-
-    // IDを5桁の数字で生成する関数
-    function generateShortId() {
-      return Math.floor(10000 + Math.random() * 90000).toString();
+    function addLog(msg) {
+      const now = new Date();
+      const time = now.getHours() + ":" + now.getMinutes() + ":" + now.getSeconds();
+      logEl.innerHTML += `[${time}] ${msg}<br>`;
+      logEl.scrollTop = logEl.scrollHeight;
     }
 
+    // カメラ起動
     async function startCamera() {
-      // 短いIDを指定してPeerを作成
-      const shortId = generateShortId();
-      peer = new Peer(shortId, peerConfig);
+      const shortId = Math.floor(10000 + Math.random() * 90000).toString();
+      addLog("Peerサーバに接続中...");
       
-      peer.on('open', async id => {
-        myIdDisplay.innerText = id;
+      // IDの衝突を避けるための接頭辞
+      peer = new Peer("baby-" + shortId, {
+        debug: 1,
+        config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }]}
+      });
+      
+      peer.on('open', async (id) => {
+        document.getElementById('myIdDisplay').innerText = shortId;
+        addLog("ID登録完了: " + shortId);
         await openCamera(currentFacingMode);
-        setupArea.classList.add('hidden');
-        videoArea.classList.remove('hidden');
-        statusText.innerText = "モニターからの接続を待っています...";
-
-        peer.on('call', call => {
-          call.answer(localStream);
-          statusText.innerText = "★モニターが接続しました";
-        });
+        document.getElementById('setupArea').classList.add('hidden');
+        document.getElementById('videoArea').classList.remove('hidden');
+        addLog("接続待機中...");
       });
 
-      peer.on('error', err => {
-        if(err.type === 'unavailable-id') {
-          alert("IDが既に使用されています。もう一度お試しください。");
-          location.reload();
-        } else {
-          alert("エラー: " + err.type);
-        }
+      peer.on('call', call => {
+        addLog("モニターからの着信あり。応答します。");
+        call.answer(localStream);
+        call.on('stream', () => addLog("通信が確立しました！"));
       });
+
+      peer.on('error', err => addLog("エラー: " + err.type));
     }
 
     async function openCamera(mode) {
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: mode },
-          audio: true
-        });
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode }, audio: true });
         videoEl.srcObject = localStream;
-        // カメラ側は常にミュート（ハウリング防止）
-        videoEl.muted = true;
+        addLog("カメラ起動成功 (" + mode + ")");
       } catch (err) {
-        alert("カメラ起動エラー: " + err);
+        addLog("カメラ失敗: " + err);
       }
     }
 
@@ -127,42 +112,40 @@
       await openCamera(currentFacingMode);
     }
 
+    // モニター起動
     function startMonitor() {
       const targetId = document.getElementById('targetIdInput').value.trim();
-      if (!targetId) return alert('IDを入力してください');
+      if (!targetId) return alert("IDを入力してください");
 
-      // モニター側はID指定なしで開始
-      peer = new Peer(peerConfig);
-      
+      addLog("モニターモード起動中...");
+      peer = new Peer({
+        debug: 1,
+        config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }]}
+      });
+
       peer.on('open', () => {
-        setupArea.classList.add('hidden');
-        videoArea.classList.remove('hidden');
+        addLog("サーバ接続完了。カメラ(ID:" + targetId + ")を呼び出します...");
+        document.getElementById('setupArea').classList.add('hidden');
+        document.getElementById('videoArea').classList.remove('hidden');
         document.getElementById('cameraSideInfo').classList.add('hidden');
-        statusText.innerText = "接続中...（画面を一度タップしてください）";
-
-        const call = peer.call(targetId);
+        
+        const call = peer.call("baby-" + targetId);
         
         call.on('stream', remoteStream => {
+          addLog("映像データ受信！");
           videoEl.srcObject = remoteStream;
-          // モニター側はミュートで開始（自動再生制限を回避）
-          videoEl.muted = true;
           videoEl.play();
-          statusText.innerText = "LIVE配信中";
-          unmuteBtn.classList.remove('hidden'); // 音声ONボタンを表示
+          document.getElementById('unmuteBtn').classList.remove('hidden');
         });
 
-        call.on('error', err => {
-          alert('接続エラー: ' + err);
-          location.reload();
-        });
+        call.on('error', err => addLog("接続失敗: " + err));
       });
     }
 
-    // モバイルブラウザ対策：ユーザー操作で音を出す
     function unmuteVideo() {
       videoEl.muted = false;
-      unmuteBtn.classList.add('hidden');
-      statusText.innerText = "LIVE配信中（音声あり）";
+      document.getElementById('unmuteBtn').classList.add('hidden');
+      addLog("音声再生開始");
     }
   </script>
 </body>
