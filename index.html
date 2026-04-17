@@ -2,14 +2,21 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>ベビーモニター</title>
+  <title>自家製ベビーモニター</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; }
-    button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; }
-    input { padding: 15px; font-size: 16px; width: 80%; max-width: 300px; margin-bottom: 10px; }
-    #videoElement { width: 100%; max-width: 600px; background: black; border-radius: 8px; margin-top: 20px; }
+    body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; color: #333; }
+    h2 { color: #5a5a5a; }
+    .card { background: #fff; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; margin-left: auto; margin-right: auto; }
+    button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; transition: 0.3s; }
+    button:hover { background: #0056b3; }
+    .btn-green { background: #28a745; }
+    .btn-green:hover { background: #218838; }
+    input { padding: 15px; font-size: 16px; width: 80%; max-width: 300px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; }
+    #videoElement { width: 100%; max-width: 600px; background: black; border-radius: 8px; margin-top: 20px; transform: scaleX(1); }
+    #myIdDisplay { font-weight: bold; color: #d9534f; font-size: 22px; margin: 15px 0; word-break: break-all; }
     .hidden { display: none; }
+    .status-tag { display: inline-block; padding: 5px 12px; border-radius: 20px; background: #eee; font-size: 14px; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -17,23 +24,28 @@
   <div id="setupArea">
     <h2>自家製ベビーモニター</h2>
     
-    <div style="background: #e9ecef; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-      <h3>赤ちゃん側に置く（古いスマホ）</h3>
+    <div class="card">
+      <h3>① 赤ちゃん側に置く（古いスマホ）</h3>
+      <p>こちらをカメラとして使います。</p>
       <button onclick="startCamera()">カメラを起動する</button>
-      <p id="myIdDisplay" style="font-weight: bold; color: #d9534f; font-size: 20px;"></p>
+      <div id="myIdDisplay"></div>
     </div>
 
-    <div style="background: #e9ecef; padding: 20px; border-radius: 8px;">
-      <h3>手元で見る（確認用スマホ）</h3>
+    <div class="card">
+      <h3>② 手元で見る（確認用スマホ）</h3>
+      <p>カメラ側に表示されたIDを入力してください。</p>
       <input type="text" id="targetIdInput" placeholder="カメラのIDを入力">
       <br>
-      <button onclick="startMonitor()" style="background: #28a745;">接続する</button>
+      <button onclick="startMonitor()" class="btn-green">接続する</button>
     </div>
   </div>
 
   <div id="videoArea" class="hidden">
-    <p id="statusText">接続中...</p>
+    <div class="status-tag" id="statusText">接続準備中...</div>
+    <br>
     <video id="videoElement" autoplay playsinline></video>
+    <br>
+    <button onclick="location.reload()" style="background:#6c757d; font-size: 12px; padding: 10px 20px;">終了して戻る</button>
   </div>
 
   <script>
@@ -45,60 +57,42 @@
 
     // ▼ カメラ側（古いスマホ）の処理
     function startCamera() {
-      peer = new Peer(); // PeerJSの初期化（IDは自動生成される）
+      peer = new Peer(); 
       
       peer.on('open', id => {
-        document.getElementById('myIdDisplay').innerText = "このカメラのID: " + id;
+        document.getElementById('myIdDisplay').innerText = "ID: " + id;
         
-        // カメラとマイクの取得を要求
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        // 【修正ポイント】背面カメラ（environment）を優先的に要求
+        const constraints = {
+          video: { facingMode: { ideal: "environment" } },
+          audio: true
+        };
+
+        navigator.mediaDevices.getUserMedia(constraints)
           .then(stream => {
-            // 取得した映像を画面に表示
             videoEl.srcObject = stream;
-            videoEl.muted = true; // ★自分側のハウリング防止のためミュート
+            videoEl.muted = true; // 自分の音を自分では出さない（ハウリング防止）
             
             setupArea.classList.add('hidden');
             videoArea.classList.remove('hidden');
-            statusText.innerText = "監視中...（ID: " + id + "）";
+            statusText.innerText = "カメラ稼働中（受信待機画面）";
 
             // モニター側からの着信を待機
             peer.on('call', call => {
-              call.answer(stream); // 着信があったらカメラの映像を送り返す
+              call.answer(stream); // 着信があったらカメラ映像を送信
             });
           })
           .catch(err => {
-            alert('カメラの起動に失敗しました。権限を許可してください。');
+            alert('カメラの起動に失敗しました。ブラウザの権限設定を確認してください。');
             console.error(err);
           });
+      });
+
+      peer.on('error', err => {
+        alert('通信エラーが発生しました: ' + err.type);
+        console.error(err);
       });
     }
 
     // ▼ モニター側（確認用スマホ）の処理
-    function startMonitor() {
-      const targetId = document.getElementById('targetIdInput').value.trim();
-      if (!targetId) return alert('カメラのIDを入力してください');
-
-      peer = new Peer();
-      
-      peer.on('open', () => {
-        setupArea.classList.add('hidden');
-        videoArea.classList.remove('hidden');
-        statusText.innerText = "カメラに接続しています...";
-
-        // カメラ側のIDに対して発信（映像要求のみなので自分のストリームは送らない）
-        const call = peer.call(targetId);
-        
-        // カメラ側から映像が送られてきたら表示する
-        call.on('stream', remoteStream => {
-          videoEl.srcObject = remoteStream;
-          statusText.innerText = "接続完了";
-        });
-
-        call.on('error', err => {
-          alert('接続エラー: ' + err);
-        });
-      });
-    }
-  </script>
-</body>
-</html>
+    function
