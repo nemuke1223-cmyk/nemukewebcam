@@ -2,21 +2,18 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>自家製ベビーモニター</title>
+  <title>自家製ベビーモニター（カメラ切替版）</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; color: #333; }
-    h2 { color: #5a5a5a; }
     .card { background: #fff; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; margin-left: auto; margin-right: auto; }
-    button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; transition: 0.3s; }
-    button:hover { background: #0056b3; }
+    button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; }
     .btn-green { background: #28a745; }
-    .btn-green:hover { background: #218838; }
+    .btn-orange { background: #fd7e14; }
     input { padding: 15px; font-size: 16px; width: 80%; max-width: 300px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; }
-    #videoElement { width: 100%; max-width: 600px; background: black; border-radius: 8px; margin-top: 20px; transform: scaleX(1); }
-    #myIdDisplay { font-weight: bold; color: #d9534f; font-size: 22px; margin: 15px 0; word-break: break-all; }
+    #videoElement { width: 100%; max-width: 600px; background: black; border-radius: 8px; margin-top: 20px; }
+    #myIdDisplay { font-weight: bold; color: #d9534f; font-size: 22px; margin: 15px 0; }
     .hidden { display: none; }
-    .status-tag { display: inline-block; padding: 5px 12px; border-radius: 20px; background: #eee; font-size: 14px; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -25,15 +22,13 @@
     <h2>自家製ベビーモニター</h2>
     
     <div class="card">
-      <h3>① 赤ちゃん側に置く（古いスマホ）</h3>
-      <p>こちらをカメラとして使います。</p>
+      <h3>① 赤ちゃん側に置く（カメラ）</h3>
       <button onclick="startCamera()">カメラを起動する</button>
       <div id="myIdDisplay"></div>
     </div>
 
     <div class="card">
-      <h3>② 手元で見る（確認用スマホ）</h3>
-      <p>カメラ側に表示されたIDを入力してください。</p>
+      <h3>② 手元で見る（モニター）</h3>
       <input type="text" id="targetIdInput" placeholder="カメラのIDを入力">
       <br>
       <button onclick="startMonitor()" class="btn-green">接続する</button>
@@ -41,58 +36,88 @@
   </div>
 
   <div id="videoArea" class="hidden">
-    <div class="status-tag" id="statusText">接続準備中...</div>
+    <div id="statusText" style="margin-bottom:10px;">接続中...</div>
+    <button id="switchBtn" onclick="switchCamera()" class="btn-orange">カメラを切り替える</button>
     <br>
     <video id="videoElement" autoplay playsinline></video>
     <br>
-    <button onclick="location.reload()" style="background:#6c757d; font-size: 12px; padding: 10px 20px;">終了して戻る</button>
+    <button onclick="location.reload()" style="background:#6c757d; margin-top:20px;">終了する</button>
   </div>
 
   <script>
     let peer;
+    let localStream;
+    let currentFacingMode = "environment"; // 最初は背面を試みる
     const videoEl = document.getElementById('videoElement');
     const setupArea = document.getElementById('setupArea');
     const videoArea = document.getElementById('videoArea');
     const statusText = document.getElementById('statusText');
 
-    // ▼ カメラ側（古いスマホ）の処理
-    function startCamera() {
-      peer = new Peer(); 
+    // カメラを起動するメイン関数
+    async function startCamera() {
+      if (!peer) peer = new Peer();
       
-      peer.on('open', id => {
+      peer.on('open', async id => {
         document.getElementById('myIdDisplay').innerText = "ID: " + id;
+        await openCamera(currentFacingMode);
         
-        // 【修正ポイント】背面カメラ（environment）を優先的に要求
-        const constraints = {
-          video: { facingMode: { ideal: "environment" } },
-          audio: true
-        };
+        setupArea.classList.add('hidden');
+        videoArea.classList.remove('hidden');
+        statusText.innerText = "カメラ待機中";
 
-        navigator.mediaDevices.getUserMedia(constraints)
-          .then(stream => {
-            videoEl.srcObject = stream;
-            videoEl.muted = true; // 自分の音を自分では出さない（ハウリング防止）
-            
-            setupArea.classList.add('hidden');
-            videoArea.classList.remove('hidden');
-            statusText.innerText = "カメラ稼働中（受信待機画面）";
-
-            // モニター側からの着信を待機
-            peer.on('call', call => {
-              call.answer(stream); // 着信があったらカメラ映像を送信
-            });
-          })
-          .catch(err => {
-            alert('カメラの起動に失敗しました。ブラウザの権限設定を確認してください。');
-            console.error(err);
-          });
-      });
-
-      peer.on('error', err => {
-        alert('通信エラーが発生しました: ' + err.type);
-        console.error(err);
+        peer.on('call', call => {
+          call.answer(localStream);
+        });
       });
     }
 
-    // ▼ モニター側（確認用スマホ）の処理
-    function
+    // カメラデバイスにアクセスする関数
+    async function openCamera(mode) {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      
+      const constraints = {
+        video: { facingMode: mode },
+        audio: true
+      };
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        videoEl.srcObject = localStream;
+        videoEl.muted = true;
+      } catch (err) {
+        alert("カメラの起動に失敗しました: " + err);
+      }
+    }
+
+    // ★カメラを前後に切り替えるボタンの処理
+    async function switchCamera() {
+      currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+      statusText.innerText = "カメラを切り替え中...";
+      await openCamera(currentFacingMode);
+      statusText.innerText = (currentFacingMode === "environment") ? "背面カメラ稼働中" : "前面カメラ稼働中";
+    }
+
+    // モニター側の接続処理
+    function startMonitor() {
+      const targetId = document.getElementById('targetIdInput').value.trim();
+      if (!targetId) return alert('IDを入力してください');
+
+      peer = new Peer();
+      peer.on('open', () => {
+        setupArea.classList.add('hidden');
+        videoArea.classList.remove('hidden');
+        document.getElementById('switchBtn').classList.add('hidden'); // モニター側では切替ボタン不要
+        statusText.innerText = "接続中...";
+
+        const call = peer.call(targetId);
+        call.on('stream', remoteStream => {
+          videoEl.srcObject = remoteStream;
+          statusText.innerText = "LIVE配信中";
+        });
+      });
+    }
+  </script>
+</body>
+</html>
